@@ -1,0 +1,59 @@
+name: Reusable — Flutter CI
+
+# Pipeline Flutter : format → analyze → test.
+# Sauté automatiquement tant que pubspec.yaml est absent.
+#
+# Usage :
+#   jobs:
+#     ci:
+#       uses: ShopUS-cs27/.github/.github/workflows/flutter-ci.yml@main
+
+on:
+  workflow_call:
+    inputs:
+      flutter-channel:
+        type: string
+        default: 'stable'
+      working-directory:
+        type: string
+        default: '.'
+
+jobs:
+  app-present:
+    runs-on: ubuntu-latest
+    outputs:
+      has_app: ${{ steps.check.outputs.has_app }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ -f pubspec.yaml ]; then
+            echo "has_app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_app=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::pubspec.yaml absent — build-test ignoré"
+          fi
+
+  build-test:
+    name: Format, analyze, test
+    needs: app-present
+    if: needs.app-present.outputs.has_app == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ inputs.flutter-channel }}
+          cache: true
+      - name: Dépendances
+        run: flutter pub get
+      - name: "Format (DoD : dart format propre)"
+        run: dart format --set-exit-if-changed .
+      - name: Analyse (sans avertissement)
+        run: flutter analyze
+      - name: Tests
+        run: flutter test

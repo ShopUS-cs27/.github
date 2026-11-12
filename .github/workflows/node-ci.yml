@@ -1,0 +1,70 @@
+name: Reusable — Node.js CI
+
+# Pipeline Node.js générique (api NestJS, web Next.js) :
+# lint → tests → e2e → build → audit dépendances.
+# Sauté automatiquement tant que package.json est absent.
+#
+# Usage dans un dépôt appelant :
+#   jobs:
+#     ci:
+#       uses: ShopUS-cs27/.github/.github/workflows/node-ci.yml@main
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: '20'
+      working-directory:
+        type: string
+        default: '.'
+      audit-level:
+        type: string
+        default: 'high'
+
+jobs:
+  app-present:
+    runs-on: ubuntu-latest
+    outputs:
+      has_app: ${{ steps.check.outputs.has_app }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ -f package.json ]; then
+            echo "has_app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_app=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::package.json absent — build-test ignoré"
+          fi
+
+  build-test:
+    name: Lint, tests, build, audit
+    needs: app-present
+    if: needs.app-present.outputs.has_app == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+      - name: Installer
+        run: npm ci
+      # --if-present : tant qu'un script n'existe pas il est ignoré ;
+      # dès qu'il existe il devient bloquant.
+      - name: Lint
+        run: npm run lint --if-present
+      - name: Tests unitaires
+        run: npm test --if-present
+      - name: Tests e2e
+        run: npm run test:e2e --if-present
+      - name: Build
+        run: npm run build --if-present
+      - name: Audit dépendances
+        run: npm audit --audit-level=${{ inputs.audit-level }}
