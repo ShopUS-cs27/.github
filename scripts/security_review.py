@@ -16,6 +16,7 @@ REPO = os.environ["GITHUB_REPOSITORY"]
 PR = os.environ["PR_NUMBER"]
 KEY = os.environ.get("GEMINI_API_KEY", "")
 MODEL = os.environ.get("SECURITY_MODEL", "gemini-3.8-flash")
+MODELS = [MODEL, "gemini-3.5-flash-lite"]  # fallback si le principal est en 503
 GH_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 
 
@@ -69,26 +70,29 @@ def main() -> int:
         ],
         "generationConfig": {"temperature": 0.2, "maxOutputTokens": 4096},
     }
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{MODEL}:generateContent?key={KEY}"
-    )
     text = None
     last_err = None
-    for attempt in range(2):
-        try:
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode(),
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=90) as r:
-                data = json.load(r)
-            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    for model in MODELS:
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model}:generateContent?key={KEY}"
+        )
+        for attempt in range(2):
+            try:
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode(),
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=90) as r:
+                    data = json.load(r)
+                text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                break
+            except Exception as e:  # noqa: BLE001 — retry puis modèle suivant
+                last_err = e
+                print(f"::warning::Gemini {model} tentative {attempt + 1}/2 : {e}")
+        if text is not None:
             break
-        except Exception as e:  # noqa: BLE001 — retry puis repli
-            last_err = e
-            print(f"::warning::Appel Gemini tentative {attempt + 1}/2 échouée : {e}")
 
     if text is None:
         # Une review IA ne doit jamais faire échouer la CI : on logge et on sort.
