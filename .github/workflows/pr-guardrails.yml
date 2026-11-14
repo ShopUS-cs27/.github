@@ -1,0 +1,90 @@
+name: Reusable — PR guardrails
+
+# Garde-fous déterministes sur les pull requests (aucune IA, zéro coût) :
+#   1. Template PR rempli : carte Trello + exigences EF/RG/ENF
+#   2. Fichiers interdits : .env, clés, credentials, google-services.json
+#   3. Taille de diff : avertissement au-delà de 800 lignes modifiées
+#
+# Usage dans un dépôt appelant :
+#   jobs:
+#     guardrails:
+#       uses: ShopUS-cs27/.github/.github/workflows/pr-guardrails.yml@main
+#       secrets: inherit
+
+on:
+  workflow_call:
+
+jobs:
+  guardrails:
+    name: PR guardrails
+    # Uniquement sur pull_request : pas de payload PR sur les push.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Vérifier le template et les fichiers de la PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -u
+          FAIL=0
+          WARNINGS=""
+
+          # --- 1. Template PR : Trello + exigences renseignés ---
+          trello_line=$(printf '%s' "$PR_BODY" | grep -i '^- Trello' | head -1 || true)
+          req_line=$(printf '%s' "$PR_BODY" | grep -i '^- Exigences' | head -1 || true)
+
+          trello_val=$(printf '%s' "$trello_line" | sed 's/^- *Trello *://I' | tr -d '[:space:]')
+          req_val=$(printf '%s' "$req_line" | sed 's/^- *Exigences *://I' | tr -d '[:space:]')
+
+          if [ -z "$trello_val" ] || [ -z "$req_val" ]; then
+            echo "::error::Template PR incomplet — renseigner '- Trello :' (lien/carte) et '- Exigences :' (EF/RG/ENF)."
+            FAIL=1
+          else
+            echo "OK — Trello et exigences renseignés."
+          fi
+
+          # Cases de la checklist DoD restées décochées = avertissement (pas bloquant)
+          unchecked=$(printf '%s' "$PR_BODY" | grep -c '^- \[ \]' || true)
+          if [ "$unchecked" -gt 0 ]; then
+            WARNINGS="${WARNINGS}- ${unchecked} case(s) de la checklist DoD non cochée(s).\n"
+          fi
+
+          # --- 2. Fichiers interdits dans le diff ---
+          files=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
+
+          forbidden=$(printf '%s\n' "$files" | grep -Ei '(^|/)\.env($|\.)|\.pem$|\.key$|google-services\.json|GoogleService-Info\.plist|id_rsa|credentials\.json|service-account.*\.json' || true)
+          if [ -n "$forbidden" ]; then
+            echo "::error::Fichiers sensibles détectés dans la PR :"
+            printf '%s\n' "$forbidden" | sed 's/^/  - /'
+            FAIL=1
+          fi
+
+          # --- 3. Taille du diff ---
+          stats=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '{additions, deletions, changed_files}')
+          additions=$(printf '%s' "$stats" | python3 -c "import json,sys; print(json.load(sys.stdin)['additions'])")
+          deletions=$(printf '%s' "$stats" | python3 -c "import json,sys; print(json.load(sys.stdin)['deletions'])")
+          changed=$(printf '%s' "$stats" | python3 -c "import json,sys; print(json.load(sys.stdin)['changed_files'])")
+          total=$((additions + deletions))
+
+          echo "Diff : ${additions}+ / ${deletions}- dans ${changed} fichier(s)."
+          if [ "$total" -gt 800 ]; then
+            WARNINGS="${WARNINGS}- Diff volumineux (${total} lignes) : envisager de découper la PR.\n"
+          fi
+
+          # --- Publication des avertissements en commentaire PR ---
+          if [ -n "$WARNINGS" ]; then
+            body=$(printf "## Garde-fous PR — avertissements\n\n${WARNINGS}")
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body" || true
+          fi
+
+          if [ "$FAIL" -eq 1 ]; then
+            echo "Garde-fous : ÉCHEC"
+            exit 1
+          fi
+          echo "Garde-fous : OK"

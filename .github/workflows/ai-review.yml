@@ -1,0 +1,81 @@
+name: Reusable — AI PR review
+
+# Review automatique des PR par PR-Agent (Qodo Merge, open source).
+# Le bot commente chaque PR avec une revue senior : résumé, problèmes
+# potentiels, conformité aux conventions du projet.
+#
+# Prérequis : secret `GEMINI_API_KEY` (clé gratuite Google AI Studio)
+# dans le dépôt appelant. Sans la clé, le job se termine en 'notice'.
+#
+# Usage :
+#   jobs:
+#     ai-review:
+#       uses: ShopUS-cs27/.github/.github/workflows/ai-review.yml@main
+#       secrets: inherit
+#   # déclencher aussi sur : pull_request (opened, reopened, ready_for_review, review_requested)
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        type: string
+        default: 'gemini/gemini-2.5-flash'
+
+jobs:
+  ai-review:
+    name: AI review (PR-Agent)
+    # Uniquement sur pull_request : pas de payload PR sur les push.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Vérifier la clé LLM
+        id: check
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GEMINI_API_KEY absente — review IA désactivée. Ajouter le secret au dépôt pour l'activer."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: PR-Agent review
+        if: steps.check.outputs.present == 'true'
+        uses: the-pr-agent/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Seule la review automatique ; /describe /improve /review restent
+          # disponibles en commentaire si on ajoute un trigger issue_comment.
+          github_action_config.auto_review: 'true'
+          github_action_config.auto_describe: 'false'
+          github_action_config.auto_improve: 'false'
+          github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested"]'
+          github_action_config.model: ${{ inputs.model }}
+          # Règles de revue — niveau senior, calibrées sur les conventions CS27
+          github_action_config.pr_reviewer.extra_instructions: |
+            Tu es un reviewer senior DevSecOps/backend pour la marketplace CS27
+            (NestJS + TypeScript, contrat openapi.yaml, schéma schema.sql).
+            Vérifie en priorité :
+            1. SÉCURITÉ : aucun secret, mot de passe, jeton ou donnée personnelle
+               loggé ou commité ; validation des entrées sur tout DTO ;
+               requêtes paramétrées uniquement ; CORS et rate limiting respectés.
+            2. CONTRAT : les routes, champs JSON (snake_case) et codes d'erreur
+               doivent correspondre à openapi.yaml — signale toute route
+               inventée ou champ non contractuel.
+            3. RÈGLES MÉTIER : transactions pour stock/commandes/audit,
+               idempotence sur les créations, journal_audit append-only,
+               erreur { code, message, details?, action? } localisée fr/en.
+            4. TESTS : chaque règle de gestion a un test ; pas de test
+               affaibli pour faire passer la CI ; couverture logique métier.
+            5. QUALITÉ : pas de 'any' injustifié, logique métier hors des
+               contrôleurs, noms explicites, gestion d'erreurs aux bonnes
+               frontières.
+            Sois direct et concis. Commente en français. Ne relève que les
+            vrais problèmes ou améliorations significatives — pas de bruit
+            sur du style que le linter gère déjà.
