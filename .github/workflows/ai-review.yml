@@ -21,7 +21,7 @@ on:
       model:
         type: string
         default: 'gemini/gemini-2.5-flash'
-    # Déclaration obligatoire pour `secrets: inherit` côté appelant.
+    # Secret optionnel : le job affiche une notice si la clé est absente.
     secrets:
       GEMINI_API_KEY:
         required: false

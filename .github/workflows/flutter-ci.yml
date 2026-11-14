@@ -10,7 +10,6 @@ name: Reusable — Flutter CI
 
 on:
   workflow_call:
-    secrets: {}
     inputs:
       flutter-channel:
         type: string
