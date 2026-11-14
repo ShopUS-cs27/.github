@@ -73,18 +73,27 @@ def main() -> int:
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"{MODEL}:generateContent?key={KEY}"
     )
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=180) as r:
-            data = json.load(r)
-        text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except Exception as e:  # noqa: BLE001 — on rapporte l'erreur en log CI
-        print(f"::error::Appel Gemini échoué : {e}")
-        return 1
+    text = None
+    last_err = None
+    for attempt in range(2):
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=90) as r:
+                data = json.load(r)
+            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            break
+        except Exception as e:  # noqa: BLE001 — retry puis repli
+            last_err = e
+            print(f"::warning::Appel Gemini tentative {attempt + 1}/2 échouée : {e}")
+
+    if text is None:
+        # Une review IA ne doit jamais faire échouer la CI : on logge et on sort.
+        print(f"::warning::Review sécu indisponible ({last_err}) — merge inchangé")
+        return 0
 
     body = (
         "## Review sécurité (agent AppSec)\n\n"
