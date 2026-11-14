@@ -1,0 +1,31 @@
+name: Reusable — Semgrep SAST
+
+# Analyse statique de sécurité (SAST) avec Semgrep — règles OWASP.
+# Bloquant uniquement sur les findings de sévérité ERROR ;
+# les WARNING/INFO sont visibles dans les logs sans faire échouer.
+#
+# Usage :
+#   jobs:
+#     semgrep:
+#       uses: ShopUS-cs27/.github/.github/workflows/semgrep.yml@main
+
+on:
+  workflow_call:
+
+jobs:
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Installer Semgrep
+        run: pipx install semgrep
+      - name: Scan sécurité (findings ERROR = échec)
+        env:
+          SEMGREP_SEND_METRICS: 'off'
+        run: semgrep scan --config p/default --severity ERROR --error --metrics off .
+      - name: Scan complet (informatif, ne bloque pas)
+        if: always()
+        env:
+          SEMGREP_SEND_METRICS: 'off'
+        run: semgrep scan --config p/default --metrics off . || true
