@@ -64,7 +64,8 @@ jobs:
           github_action_config.auto_describe: 'false'
           github_action_config.auto_improve: 'false'
           github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested"]'
-          github_action_config.model: ${{ inputs.model }}
+          github_action_config.config.model: ${{ inputs.model }}
+          github_action_config.config.fallback_models: '["gemini/gemini-2.5-flash-lite"]'
           # Règles de revue — niveau senior, calibrées sur les conventions CS27
           github_action_config.pr_reviewer.extra_instructions: |
             Tu es un reviewer senior DevSecOps/backend pour la marketplace CS27
