@@ -20,6 +20,10 @@ on:
       model:
         type: string
         default: 'gemini/gemini-2.5-flash'
+    # Déclaration obligatoire pour `secrets: inherit` côté appelant.
+    secrets:
+      GEMINI_API_KEY:
+        required: false
 
 jobs:
   ai-review:

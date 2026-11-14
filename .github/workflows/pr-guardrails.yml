@@ -13,6 +13,9 @@ name: Reusable — PR guardrails
 
 on:
   workflow_call:
+    # Bloc secrets obligatoire : les appelants utilisent `secrets: inherit`,
+    # GitHub refuse le workflow appelé sans déclaration (startup_failure).
+    secrets: {}
 
 jobs:
   guardrails:

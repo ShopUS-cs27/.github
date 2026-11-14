@@ -11,6 +11,7 @@ name: Reusable — Node.js CI
 
 on:
   workflow_call:
+    secrets: {}
     inputs:
       node-version:
         type: string
