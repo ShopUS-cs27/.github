@@ -11,7 +11,8 @@ name: Reusable — AI PR review
 #   jobs:
 #     ai-review:
 #       uses: ShopUS-cs27/.github/.github/workflows/ai-review.yml@main
-#       secrets: inherit
+#       secrets:
+#         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 #   # déclencher aussi sur : pull_request (opened, reopened, ready_for_review, review_requested)
 
 on:

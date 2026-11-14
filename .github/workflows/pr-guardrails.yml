@@ -9,7 +9,6 @@ name: Reusable — PR guardrails
 #   jobs:
 #     guardrails:
 #       uses: ShopUS-cs27/.github/.github/workflows/pr-guardrails.yml@main
-#       secrets: inherit
 
 on:
   workflow_call:
