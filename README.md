@@ -1,26 +1,14 @@
 # .github — Plateforme CI/CD · Marketplace CS27
 
-Dépôt d'orchestration DevSecOps de l'org `ShopUS-cs27`. Tous les workflows
-CI/CD **transverses** vivent ici sous forme de *reusable workflows*
+Dépôt d'orchestration DevSecOps de l'org `ShopUS-cs27`. Les workflows CI/CD
+**transverses** vivent ici sous forme de *reusable workflows*
 (`workflow_call`) : chaque dépôt métier (`api`, `web`, `mobile`, `docs`)
-se contente de les appeler. Une correction ici se propage partout —
-c'est la golden path plateforme.
+se contente de les appeler. Une correction ici se propage partout.
 
-## Architecture
-
-```
-DevSecOps (NICE-DEV226 + Aida-Zongo)
-        │  maintient
-        ▼
-ShopUS-cs27/.github  ── workflows réutilisables + scripts
-        │  appelé par @main
-        ▼
-api · web · mobile · docs  ── .github/workflows/ci.yml (appels uniquement)
-```
-
-Les équipes métier **ne modifient jamais** les workflows : ils codent,
-la CI s'applique automatiquement. Toute évolution du pipeline passe par
-une PR sur ce dépôt avec relecture DevSecOps.
+**Principe : simple et utile.** Pas de bots bavards — une PR propre ne
+reçoit aucun commentaire. Seuls les échecs actionnables publient un
+commentaire. Tout le reste est visible dans les checks et les résumés
+de jobs.
 
 ## Workflows disponibles
 
@@ -30,46 +18,33 @@ une PR sur ce dépôt avec relecture DevSecOps.
 | `node-ci.yml` | npm ci → lint → tests → e2e → build → audit | PR + push |
 | `flutter-ci.yml` | format → analyze → test (skip si pas de pubspec) | PR + push |
 | `semgrep.yml` | SAST — règles OWASP `p/default` | PR + push |
-| `pr-guardrails.yml` | Template PR, fichiers interdits, taille diff | PR uniquement |
-| `ai-review.yml` | Review IA PR-Agent (générale + AppSec via `.pr_agent.toml`) | PR uniquement |
-| `reviewdog.yml` | Commentaires ESLint inline sur les lignes du diff | PR uniquement |
-| `auto-merge-gate.yml` | Merge auto conditionnel (CI verte + approbation humaine, hors zones sensibles) | review + workflow_run |
+| `pr-guardrails.yml` | Template PR, fichiers interdits, nommage branches, back-merge release | PR uniquement |
 
-Le dépôt `docs` a en plus une CI locale `contract` (Redocly + schema.sql).
+Le dépôt `api` ajoute `pr-title.yml` (conventional commits) et `docs`
+sa CI locale `contract` (Redocly + schema.sql).
 
-## Pipeline de review (ce que voit une PR)
+## Ce que voit une PR
 
 ```
 push → PR vers dev
-  ├─ Gitleaks      → secrets commités ?        BLOQUANT
-  ├─ Semgrep       → vulnérabilités SAST       BLOQUANT
-  ├─ tests/build   → lint, tests, audit deps   BLOQUANT
-  ├─ guardrails    → template, fichiers, taille  BLOQUANT si incomplet
-  ├─ PR-Agent      → review IA générale + AppSec  consultatif
-  ├─ reviewdog     → warnings ESLint inline       consultatif
-  └─ humain        → ≥1 approbation (Aida ou NICE-DEV226)
-        │
-        ▼  auto-merge-gate : merge auto SI
-           CI verte + approbation humaine
-           ET aucun fichier sensible touché
-           (auth, gardes, audit, migrations,
-            workflows, render.yaml, .env*)
-           → sinon merge manuel obligatoire
+  ├─ Gitleaks      → secrets commités ?         BLOQUANT
+  ├─ build/tests   → lint, tests, audit deps    BLOQUANT
+  ├─ Semgrep       → vulnérabilités SAST        BLOQUANT
+  ├─ guardrails    → template, fichiers, branches, back-merge
+  │                 → silencieux si OK ; 1 commentaire SEULEMENT si échec
+  └─ humain        → ≥1 approbation (Aida ou NICE-DEV226) → merge manuel
 ```
 
-Stratégie de fusion : **squash** pour les PRs features → `dev` ;
-**merge commit** pour les releases `dev → main` et les back-merges
-`main → dev` (préserve le SHA testé et l'ancêtre `main`).
+Promotion `dev → main` : PR `chore(release): promotion dev → main — <date>`,
+**merge commit** obligatoire (le SHA testé est préservé), et le guardrail
+vérifie que `main` est contenu dans `dev` (back-merge).
 
-## Secrets requis par dépôt
+## Secrets
 
-| Secret | Usage |
-|---|---|
-| `GEMINI_API_KEY` | PR-Agent (review IA) — Google AI Studio, free tier |
+Aucun secret requis : tous les jobs utilisent le `GITHUB_TOKEN`
+automatique à permissions minimales.
 
-Les autres jobs n'ont besoin que du `GITHUB_TOKEN` automatique.
-
-## Comment appeler depuis un dépôt
+## Appeler depuis un dépôt
 
 ```yaml
 name: CI
@@ -81,7 +56,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write   # requis : les bots commentent les PR
+  pull-requests: write   # requis : le commentaire d'échec guardrails
   issues: write
 
 jobs:
@@ -91,32 +66,22 @@ jobs:
     uses: ShopUS-cs27/.github/.github/workflows/node-ci.yml@main
   semgrep:
     uses: ShopUS-cs27/.github/.github/workflows/semgrep.yml@main
-  reviewdog:
-    uses: ShopUS-cs27/.github/.github/workflows/reviewdog.yml@main
   guardrails:
     uses: ShopUS-cs27/.github/.github/workflows/pr-guardrails.yml@main
-  ai-review:
-    uses: ShopUS-cs27/.github/.github/workflows/ai-review.yml@main
-    secrets:
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 ```
 
-Points importants :
-
-- `permissions:` dans l'appelant **obligatoire** si un workflow appelé
-  commente les PR — sinon `startup_failure`.
-- `secrets:` passés **explicitement** (pas de `secrets: inherit` sur les
-  workflows `workflow_call`).
-- Les workflows appelés ne peuvent pas élever les droits de l'appelant.
+Points importants : `permissions:` dans l'appelant obligatoire si un
+workflow appelé commente les PR ; les workflows appelés ne peuvent pas
+élever les droits de l'appelant.
 
 ## Règles
 
-- Versionner les appels sur `@main` aujourd'hui ; passer à un tag `v1`
-  quand le pipeline sera figé.
+- Versionner les appels sur `@main` ; passer à un tag `v1` quand figé.
 - Jamais de secret en dur — `secrets.` du dépôt appelant.
-- Toute modification = PR avec relecture DevSecOps (zone sensible).
-- Une review IA est **consultative** : elle ne remplace jamais
-  l'approbation humaine, et ne doit jamais faire échouer la CI.
+- Toute modification = PR avec relecture DevSecOps (zone sensible :
+  `.github/`, `render.yaml`, auth, gardes, audit, migrations).
+- Merge : squash pour features → `dev` ; merge commit pour releases
+  et back-merges.
 
 ## Licence
 
