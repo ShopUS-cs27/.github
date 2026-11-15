@@ -118,18 +118,15 @@ jobs:
             WARNINGS="${WARNINGS}- Diff volumineux (${total} lignes) : envisager de découper la PR.\n"
           fi
 
-          # --- Publication des avertissements en commentaire PR ---
-          # Déduplication : on supprime nos anciens commentaires de
-          # garde-fous puis on en poste un seul à jour.
+          # --- Avertissements : dans le job summary, PAS de commentaire PR ---
+          # Une PR propre ne reçoit aucun commentaire de la part des bots ;
+          # seul un échec réel (ci-dessous) publie un commentaire actionnable.
           if [ -n "$WARNINGS" ]; then
-            marker="<!-- guardrails-warnings -->"
-            old_ids=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate \
-              --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("guardrails-warnings"))) | .id' || true)
-            for id in $old_ids; do
-              gh api -X DELETE "repos/${REPO}/issues/comments/${id}" || true
-            done
-            body=$(printf "## Garde-fous PR — avertissements\n\n${marker}\n\n> Checks déterministes (pas d'IA). Ceci **n'apparaît que si quelque chose cloche** — le silence = tout est conforme.\n\n${WARNINGS}\n**Action attendue** : corriger les points ci-dessus ou justifier dans la PR.")
-            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body" || true
+            {
+              echo "## Garde-fous PR — avertissements"
+              echo ""
+              printf '%b' "$WARNINGS"
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
           if [ "$FAIL" -eq 1 ]; then
