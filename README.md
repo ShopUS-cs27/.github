@@ -57,6 +57,10 @@ push → PR vers dev
            → sinon merge manuel obligatoire
 ```
 
+Stratégie de fusion : **squash** pour les PRs features → `dev` ;
+**merge commit** pour les releases `dev → main` et les back-merges
+`main → dev` (préserve le SHA testé et l'ancêtre `main`).
+
 ## Secrets requis par dépôt
 
 | Secret | Usage |
