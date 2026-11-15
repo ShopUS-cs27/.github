@@ -26,7 +26,6 @@ jobs:
       - name: Vérifier le template et les fichiers de la PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_BODY: ${{ github.event.pull_request.body }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
         run: |
@@ -34,6 +33,11 @@ jobs:
           FAIL=0
           WARNINGS=""
           REASONS=""
+
+          # Body lu en direct : le payload github.event est figé à la
+          # création du run — un rerun après édition du body verrait
+          # une version périmée.
+          PR_BODY=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.body // ""')
 
           # PR de promotion dev → main : pas de template feature requis,
           # le diff est gros par nature. On garde quand même le scan
