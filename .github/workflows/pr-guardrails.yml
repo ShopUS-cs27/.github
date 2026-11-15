@@ -35,7 +35,18 @@ jobs:
           WARNINGS=""
           REASONS=""
 
+          # PR de promotion dev → main : pas de template feature requis,
+          # le diff est gros par nature. On garde quand même le scan
+          # des fichiers interdits.
+          IS_RELEASE=0
+          if [ "${{ github.event.pull_request.head.ref }}" = "dev" ] && \
+             [ "${{ github.event.pull_request.base.ref }}" = "main" ]; then
+            IS_RELEASE=1
+            echo "PR de release (dev → main) — template et taille non applicables."
+          fi
+
           # --- 1. Template PR : Trello + exigences renseignés ---
+          if [ "$IS_RELEASE" -eq 0 ]; then
           trello_line=$(printf '%s' "$PR_BODY" | grep -i '^- Trello' | head -1 || true)
           req_line=$(printf '%s' "$PR_BODY" | grep -i '^- Exigences' | head -1 || true)
 
@@ -49,12 +60,15 @@ jobs:
           else
             echo "OK — Trello et exigences renseignés."
           fi
+          fi # fin IS_RELEASE == 0
 
           # Cases de la checklist DoD restées décochées = avertissement (pas bloquant)
+          if [ "$IS_RELEASE" -eq 0 ]; then
           unchecked=$(printf '%s' "$PR_BODY" | grep -c '^- \[ \]' || true)
           if [ "$unchecked" -gt 0 ]; then
             WARNINGS="${WARNINGS}- ${unchecked} case(s) de la checklist DoD non cochée(s).\n"
           fi
+          fi # fin IS_RELEASE == 0
 
           # --- 2. Fichiers interdits dans le diff ---
           files=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
@@ -75,7 +89,7 @@ jobs:
           total=$((additions + deletions))
 
           echo "Diff : ${additions}+ / ${deletions}- dans ${changed} fichier(s)."
-          if [ "$total" -gt 800 ]; then
+          if [ "$total" -gt 800 ] && [ "$IS_RELEASE" -eq 0 ]; then
             WARNINGS="${WARNINGS}- Diff volumineux (${total} lignes) : envisager de découper la PR.\n"
           fi
 
