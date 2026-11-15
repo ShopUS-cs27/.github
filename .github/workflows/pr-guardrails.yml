@@ -33,6 +33,7 @@ jobs:
           set -u
           FAIL=0
           WARNINGS=""
+          REASONS=""
 
           # --- 1. Template PR : Trello + exigences renseignés ---
           trello_line=$(printf '%s' "$PR_BODY" | grep -i '^- Trello' | head -1 || true)
@@ -43,6 +44,7 @@ jobs:
 
           if [ -z "$trello_val" ] || [ -z "$req_val" ]; then
             echo "::error::Template PR incomplet — renseigner '- Trello :' (lien/carte) et '- Exigences :' (EF/RG/ENF)."
+            REASONS="${REASONS}- Template PR incomplet : renseigner \`- Trello :\` et \`- Exigences :\`.\n"
             FAIL=1
           else
             echo "OK — Trello et exigences renseignés."
@@ -61,6 +63,7 @@ jobs:
           if [ -n "$forbidden" ]; then
             echo "::error::Fichiers sensibles détectés dans la PR :"
             printf '%s\n' "$forbidden" | sed 's/^/  - /'
+            REASONS="${REASONS}- Fichier(s) sensible(s) interdit(s) :\n$(printf '%s\n' "$forbidden" | sed 's/^/  - /')\n"
             FAIL=1
           fi
 
@@ -86,11 +89,20 @@ jobs:
             for id in $old_ids; do
               gh api -X DELETE "repos/${REPO}/issues/comments/${id}" || true
             done
-            body=$(printf "## Garde-fous PR — avertissements\n\n${marker}\n\n${WARNINGS}")
+            body=$(printf "## Garde-fous PR — avertissements\n\n${marker}\n\n> Checks déterministes (pas d'IA). Ceci **n'apparaît que si quelque chose cloche** — le silence = tout est conforme.\n\n${WARNINGS}\n**Action attendue** : corriger les points ci-dessus ou justifier dans la PR.")
             gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body" || true
           fi
 
           if [ "$FAIL" -eq 1 ]; then
+            # Commentaire explicite sur la PR pour guider le dev.
+            marker_fail="<!-- guardrails-fail -->"
+            old_fail=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate \
+              --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("guardrails-fail"))) | .id' || true)
+            for id in $old_fail; do
+              gh api -X DELETE "repos/${REPO}/issues/comments/${id}" || true
+            done
+            fbody=$(printf "## Garde-fous PR — ÉCHEC\n\n${marker_fail}\n\n${REASONS}\nConsulter le run CI pour le détail. Corriger puis repousser : le check se relancera automatiquement.")
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$fbody" || true
             echo "Garde-fous : ÉCHEC"
             exit 1
           fi
