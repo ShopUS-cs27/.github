@@ -77,8 +77,16 @@ jobs:
           fi
 
           # --- Publication des avertissements en commentaire PR ---
+          # Déduplication : on supprime nos anciens commentaires de
+          # garde-fous puis on en poste un seul à jour.
           if [ -n "$WARNINGS" ]; then
-            body=$(printf "## Garde-fous PR — avertissements\n\n${WARNINGS}")
+            marker="<!-- guardrails-warnings -->"
+            old_ids=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate \
+              --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("guardrails-warnings"))) | .id' || true)
+            for id in $old_ids; do
+              gh api -X DELETE "repos/${REPO}/issues/comments/${id}" || true
+            done
+            body=$(printf "## Garde-fous PR — avertissements\n\n${marker}\n\n${WARNINGS}")
             gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body" || true
           fi
 

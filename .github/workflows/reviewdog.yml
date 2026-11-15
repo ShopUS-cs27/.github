@@ -1,0 +1,52 @@
+name: Reusable — ESLint via reviewdog
+
+# Publie les warnings/erreurs ESLint en commentaires de review sur les
+# lignes du diff (filtre "added" : seules les nouvelles lignes comptent).
+# Sans config ESLint ou sans package.json → job ignoré proprement.
+#
+# Usage :
+#   jobs:
+#     lint-review:
+#       uses: ShopUS-cs27/.github/.github/workflows/reviewdog.yml@main
+
+on:
+  workflow_call:
+
+jobs:
+  eslint:
+    name: ESLint → reviewdog
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ESLint configuré ?
+        id: check
+        run: |
+          if [ -f package.json ] && ls eslint.config.* .eslintrc* >/dev/null 2>&1; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Pas de config ESLint — job ignoré."
+          fi
+
+      - if: steps.check.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - if: steps.check.outputs.run == 'true'
+        run: npm ci
+
+      - if: steps.check.outputs.run == 'true'
+        uses: reviewdog/action-eslint@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reporter: github-pr-review
+          filter_mode: added
+          fail_level: none
+          eslint_flags: 'src/ test/'
