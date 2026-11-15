@@ -51,7 +51,7 @@ jobs:
 
       - name: PR-Agent review
         if: steps.check.outputs.present == 'true'
-        uses: the-pr-agent/pr-agent@v0.50.0
+        uses: the-pr-agent/pr-agent@e673a02076ce09a4726c3d0c3cc85780e59ca52b # v0.50.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # PR-Agent exige une clé sous OPENAI_API_KEY pour démarrer ;

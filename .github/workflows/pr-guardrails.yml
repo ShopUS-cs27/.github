@@ -43,6 +43,31 @@ jobs:
              [ "${{ github.event.pull_request.base.ref }}" = "main" ]; then
             IS_RELEASE=1
             echo "PR de release (dev → main) — template et taille non applicables."
+
+            # Back-merge : main doit être contenu dans dev (sinon des commits
+            # de main — hotfix, config — seraient perdus ou divergeraient).
+            cmp=$(gh api "repos/${REPO}/compare/main...${{ github.event.pull_request.head.sha }}" \
+              --jq '.status' || true)
+            if [ "$cmp" = "behind" ] || [ "$cmp" = "diverged" ]; then
+              echo "::error::main contient des commits absents de dev — back-merger main dans dev avant la release."
+              REASONS="${REASONS}- \`main\` a des commits absents de \`dev\` : merger \`main\` dans \`dev\` (back-merge) puis repousser.\n"
+              FAIL=1
+            else
+              echo "OK — dev contient main (compare: $cmp)."
+            fi
+          fi
+
+          # --- 0. Branche source et cible (convention ShopUS) ---
+          HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+          if [ "$BASE_REF" = "main" ] && [ "$IS_RELEASE" -eq 0 ] && ! [[ "$HEAD_REF" =~ ^hotfix/ ]]; then
+            echo "::error::Seules les PRs 'dev → main' (release) ou 'hotfix/*' peuvent cibler main."
+            REASONS="${REASONS}- Cible \`main\` réservée aux releases (dev → main) et hotfix — cette PR vient de \`$HEAD_REF\`.\n"
+            FAIL=1
+          elif [ "$BASE_REF" = "dev" ] && [ "$HEAD_REF" != "main" ] && ! [[ "$HEAD_REF" =~ ^(feature|fix|hotfix|chore|docs|ci|refactor|test|dependabot)/[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::Nom de branche invalide : $HEAD_REF — attendu 'type/sujet' (feature/, fix/, chore/, docs/, ci/…)."
+            REASONS="${REASONS}- Branche \`$HEAD_REF\` hors convention : renommer en \`type/sujet\` (ex. feature/B20-pagination).\n"
+            FAIL=1
           fi
 
           # --- 1. Template PR : Trello + exigences renseignés ---
