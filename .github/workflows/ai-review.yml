@@ -1,0 +1,116 @@
+name: Reusable — AI review
+
+# Review IA sobre : UN commentaire par PR, mis à jour à chaque push,
+# et seulement s'il y a des findings réels. Silencieux sinon.
+# Modèle : API compatible OpenAI (coarena.ai free tier → gpt-6-luna).
+
+on:
+  workflow_call:
+    secrets:
+      COARENA_API_KEY:
+        required: true
+
+jobs:
+  review:
+    name: AI review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Generate review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COARENA_API_KEY: ${{ secrets.COARENA_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          MARKER='<!-- ai-review -->'
+
+          gh api "repos/$REPO/pulls/$PR_NUMBER" \
+            --jq '.title + "\n\n" + (.body // "")' > /tmp/pr_meta.txt
+          gh api "repos/$REPO/pulls/$PR_NUMBER/files?per_page=100" \
+            --jq '.[] | "### FICHIER: " + .filename + " (" + .status + ", +" + (.additions|tostring) + "/-" + (.deletions|tostring) + ")\n" + (.patch // "(binaire ou trop volumineux)")' \
+            > /tmp/diff.txt
+
+          # Garde-fou taille : au-delà, on tronque et on le dit au reviewer.
+          TOTAL=$(wc -c < /tmp/diff.txt)
+          if [ "$TOTAL" -gt 60000 ]; then
+            head -c 60000 /tmp/diff.txt > /tmp/diff_trunc.txt
+            echo "(diff tronqué à 60k caractères sur $TOTAL)" >> /tmp/diff_trunc.txt
+          else
+            cp /tmp/diff.txt /tmp/diff_trunc.txt
+          fi
+
+          python3 - <<'PY' > /tmp/payload.json
+          import json
+          meta = open('/tmp/pr_meta.txt').read()[:4000]
+          diff = open('/tmp/diff_trunc.txt').read()
+          system = (
+            "Tu es un reviewer senior pour une marketplace étudiante (NestJS/TypeScript, "
+            "Flutter, Next.js, PostgreSQL, i18n fr/en). Tu relis des pull requests GitHub.\n"
+            "Cherche uniquement les vrais problèmes : bugs, failles de sécurité "
+            "(injection, secrets, auth cassée, hashage faible), violations du contrat "
+            "API, races/transactions manquantes, fuites de données.\n"
+            "N'invente rien, ne fais pas de remarque de style, ne complimente pas.\n"
+            "Réponds en français, markdown léger, max ~15 lignes, sections "
+            "« Bloquant » / « À discuter » / « Détail » selon le cas.\n"
+            "Si la PR est propre, réponds exactement : NO_ISSUES"
+          )
+          user = f"PR:\n{meta}\n\nDIFF:\n{diff}"
+          print(json.dumps({
+            "model": "gpt-6-luna",
+            "messages": [
+              {"role": "system", "content": system},
+              {"role": "user", "content": user},
+            ],
+            "max_tokens": 1200,
+            "temperature": 0.2,
+          }))
+          PY
+
+          call_api() {
+            curl -sf -m 120 "https://coarena.ai/api/v1/chat/completions" \
+              -H "Authorization: Bearer $COARENA_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d @/tmp/payload.json
+          }
+
+          if ! call_api > /tmp/review.json; then
+            echo "::warning::Modèle principal indisponible, essai fallback gemini-3-8-flash"
+            python3 - <<'PY'
+          import json
+          p = json.load(open('/tmp/payload.json'))
+          p['model'] = 'gemini-3-8-flash'
+          json.dump(p, open('/tmp/payload.json','w'))
+          PY
+            call_api > /tmp/review.json || { echo "::error::API IA indisponible"; exit 0; }
+          fi
+
+          CONTENT=$(python3 - <<'PY'
+          import json
+          d = json.load(open('/tmp/review.json'))
+          print(d['choices'][0]['message'].get('content') or '')
+          PY
+          )
+
+          if [ -z "$CONTENT" ] || echo "$CONTENT" | grep -q "NO_ISSUES"; then
+            echo "Aucun finding — pas de commentaire."
+            exit 0
+          fi
+
+          BODY=$(printf '%s\n\n%s\n\n%s\n' "$MARKER" "$CONTENT" "_Review automatique — à vérifier par un humain._")
+
+          # Un seul commentaire par PR : on met à jour l'existant (marker), sinon on crée.
+          EXISTING=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" \
+            --jq "[.[] | select(.body | contains(\"$MARKER\")) | .id] | last // empty")
+
+          if [ -n "$EXISTING" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$EXISTING" -f body="$BODY" > /dev/null
+            echo "Commentaire review mis à jour (id=$EXISTING)"
+          else
+            gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$BODY" > /dev/null
+            echo "Commentaire review publié"
+          fi
