@@ -102,7 +102,9 @@ jobs:
           # --- 2. Fichiers interdits dans le diff ---
           files=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
 
-          forbidden=$(printf '%s\n' "$files" | grep -Ei '(^|/)\.env($|\.)|\.pem$|\.key$|google-services\.json|GoogleService-Info\.plist|id_rsa|credentials\.json|service-account.*\.json' || true)
+          # .env.example est le template documenté : il est autorisé, les vrais
+          # fichiers d'environnement (.env, .env.local, .env.production…) restent bloqués.
+          forbidden=$(printf '%s\n' "$files" | grep -Ei '(^|/)\.env($|\.)|\.pem$|\.key$|google-services\.json|GoogleService-Info\.plist|id_rsa|credentials\.json|service-account.*\.json' | grep -vE '\.env\.example$' || true)
           if [ -n "$forbidden" ]; then
             echo "::error::Fichiers sensibles détectés dans la PR :"
             printf '%s\n' "$forbidden" | sed 's/^/  - /'
