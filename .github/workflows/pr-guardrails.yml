@@ -68,7 +68,7 @@ jobs:
             echo "::error::Seules les PRs 'dev → main' (release) ou 'hotfix/*' peuvent cibler main."
             REASONS="${REASONS}- Cible \`main\` réservée aux releases (dev → main) et hotfix — cette PR vient de \`$HEAD_REF\`.\n"
             FAIL=1
-          elif [ "$BASE_REF" = "dev" ] && [ "$HEAD_REF" != "main" ] && ! [[ "$HEAD_REF" =~ ^(feature|fix|hotfix|chore|docs|ci|refactor|test|dependabot)/[A-Za-z0-9._-]+$ ]]; then
+          elif [ "$BASE_REF" = "dev" ] && [ "$HEAD_REF" != "main" ] && ! [[ "$HEAD_REF" =~ ^(feature|fix|hotfix|chore|docs|ci|refactor|test)/[A-Za-z0-9._-]+$|^dependabot/.+$ ]]; then
             echo "::error::Nom de branche invalide : $HEAD_REF — attendu 'type/sujet' (feature/, fix/, chore/, docs/, ci/…)."
             REASONS="${REASONS}- Branche \`$HEAD_REF\` hors convention : renommer en \`type/sujet\` (ex. feature/B20-pagination).\n"
             FAIL=1
