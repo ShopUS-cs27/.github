@@ -1,0 +1,68 @@
+name: Reusable — Node.js coverage
+
+# Mesure la couverture de tests (ENF-10 : ≥60 % sur la logique métier).
+# Publie le rapport en artifact et un résumé dans le job — ne bloque
+# pas la PR : le seuil est vérifié à la release, pas à chaque commit.
+#
+# Usage :
+#   jobs:
+#     coverage:
+#       uses: ShopUS-cs27/.github/.github/workflows/node-coverage.yml@main
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: '20'
+      working-directory:
+        type: string
+        default: '.'
+      coverage-script:
+        type: string
+        default: 'test:cov'
+
+jobs:
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+      - name: Installer
+        run: npm ci
+      - name: Coverage
+        run: npm run ${{ inputs.coverage-script }}
+      - name: Résumé couverture
+        if: always()
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            node -e "
+              const s = require('./coverage/coverage-summary.json').total;
+              const pct = (k) => (s[k].pct ?? 0).toFixed(1) + '%';
+              console.log('## Coverage');
+              console.log('| Metric | % |');
+              console.log('|---|---|');
+              console.log('| Lines | ' + pct('lines') + ' |');
+              console.log('| Statements | ' + pct('statements') + ' |');
+              console.log('| Functions | ' + pct('functions') + ' |');
+              console.log('| Branches | ' + pct('branches') + ' |');
+            " >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "coverage-summary.json absent — le script coverage n'a pas produit de rapport" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Archiver le rapport
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-report
+          path: ${{ inputs.working-directory }}/coverage/
+          retention-days: 14
+          if-no-files-found: ignore

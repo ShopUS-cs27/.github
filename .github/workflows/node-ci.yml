@@ -56,6 +56,11 @@ jobs:
           cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
       - name: Installer
         run: npm ci
+      # Schéma Prisma : valide la syntaxe dès qu'un schéma existe
+      # (repo api) — détecte les dérives avant merge. Ignoré ailleurs.
+      - name: Valider le schéma Prisma
+        if: hashFiles(format('{0}/prisma/schema.prisma', inputs.working-directory)) != ''
+        run: npx prisma validate
       # --if-present : tant qu'un script n'existe pas il est ignoré ;
       # dès qu'il existe il devient bloquant.
       - name: Lint
